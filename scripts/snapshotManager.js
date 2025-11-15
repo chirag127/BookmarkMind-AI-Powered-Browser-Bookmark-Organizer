@@ -10,6 +10,69 @@ class SnapshotManager {
     this.storageKey = 'bookmarkMindSnapshots';
     this.QUOTA_BYTES_LIMIT = 10485760; // 10MB chrome.storage.local limit
     this.SAFE_THRESHOLD = 0.8; // Use only 80% of quota for safety
+    this.compressionEnabled = true;
+  }
+
+  /**
+   * Compress bookmark tree data using optimizations
+   * @private
+   */
+  _compressBookmarkTree(tree) {
+    if (!tree) return null;
+
+    const compress = (node) => {
+      const compressed = {
+        i: node.id,
+        t: node.title
+      };
+
+      if (node.url) {
+        compressed.u = node.url;
+      }
+
+      if (node.dateAdded) {
+        compressed.d = node.dateAdded;
+      }
+
+      if (node.children && node.children.length > 0) {
+        compressed.c = node.children.map(child => compress(child));
+      }
+
+      return compressed;
+    };
+
+    return compress(tree);
+  }
+
+  /**
+   * Decompress bookmark tree data
+   * @private
+   */
+  _decompressBookmarkTree(compressed) {
+    if (!compressed) return null;
+
+    const decompress = (node) => {
+      const decompressed = {
+        id: node.i,
+        title: node.t
+      };
+
+      if (node.u) {
+        decompressed.url = node.u;
+      }
+
+      if (node.d) {
+        decompressed.dateAdded = node.d;
+      }
+
+      if (node.c && node.c.length > 0) {
+        decompressed.children = node.c.map(child => decompress(child));
+      }
+
+      return decompressed;
+    };
+
+    return decompress(compressed);
   }
 
   /**
@@ -226,6 +289,9 @@ class SnapshotManager {
 
       const tree = await chrome.bookmarks.getTree();
 
+      const compressedTree = this.compressionEnabled ?
+        this._compressBookmarkTree(tree[0]) : tree[0];
+
       const snapshot = {
         id: this._generateSnapshotId(),
         timestamp: Date.now(),
@@ -233,9 +299,10 @@ class SnapshotManager {
         metadata: {
           ...metadata,
           version: '1.0',
-          createdBy: 'BookmarkMind'
+          createdBy: 'BookmarkMind',
+          compressed: this.compressionEnabled
         },
-        bookmarkTree: tree[0]
+        bookmarkTree: compressedTree
       };
 
       const validation = this._validateSnapshotStructure(snapshot);
@@ -243,9 +310,13 @@ class SnapshotManager {
         throw new Error(`Invalid snapshot structure: ${validation.errors.join(', ')}`);
       }
 
+      const uncompressedSize = new Blob([JSON.stringify({ ...snapshot, bookmarkTree: tree[0] })]).size;
       const snapshotSize = new Blob([JSON.stringify(snapshot)]).size;
       const snapshotSizeMB = (snapshotSize / (1024 * 1024)).toFixed(4);
-      if (snapshotmanagerLogger) snapshotmanagerLogger.info(`📦 Snapshot size: ${snapshotSizeMB}MB`);
+      const compressionRatio = this.compressionEnabled ?
+        ((1 - snapshotSize / uncompressedSize) * 100).toFixed(1) : 0;
+
+      if (snapshotmanagerLogger) snapshotmanagerLogger.info(`📦 Snapshot size: ${snapshotSizeMB}MB (${compressionRatio}% compression)`);
 
       if (snapshotSize > this.QUOTA_BYTES_LIMIT * this.SAFE_THRESHOLD) {
         if (snapshotmanagerLogger) snapshotmanagerLogger.warn(`⚠️ Snapshot size (${snapshotSizeMB}MB) exceeds safe threshold, may cause storage issues`);
@@ -353,6 +424,10 @@ class SnapshotManager {
           validationErrors: validation.errors
         });
         return null;
+      }
+
+      if (snapshot.metadata?.compressed) {
+        snapshot.bookmarkTree = this._decompressBookmarkTree(snapshot.bookmarkTree);
       }
 
       if (snapshotmanagerLogger) snapshotmanagerLogger.info(`✅ Loaded snapshot: ${snapshotId}`);
@@ -806,3 +881,4 @@ if (typeof window !== 'undefined') {
 if (typeof self !== 'undefined' && typeof window === 'undefined') {
   self.SnapshotManager = SnapshotManager;
 }
+

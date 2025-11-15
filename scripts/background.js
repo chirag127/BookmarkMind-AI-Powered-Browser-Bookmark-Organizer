@@ -5,6 +5,7 @@
 
 // Global flag to track script loading state
 let scriptsLoaded = false;
+let memoryMonitor = null;
 
 // Import required modules using importScripts for Manifest V3
 if (!scriptsLoaded) {
@@ -21,11 +22,17 @@ if (!scriptsLoaded) {
       'analyticsService.js',
       'performanceMonitor.js',
       'modelComparisonService.js',
-      'benchmarkService.js'
+      'benchmarkService.js',
+      'memoryManager.js'
     );
     scriptsLoaded = true;
     const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
     if (backgroundLogger) backgroundLogger.info('Background scripts loaded successfully');
+    
+    if (typeof MemoryManager !== 'undefined') {
+      memoryMonitor = new MemoryManager();
+      memoryMonitor.startMonitoring();
+    }
 
     // Verify classes are available
     if (backgroundLogger) backgroundLogger.info('Available classes:', {

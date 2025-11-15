@@ -1,11 +1,148 @@
 /**
  * BookmarkMind - Folder Manager
- * Handles folder operations and bookmark organization
+ * Handles folder operations and bookmark organization with intelligent caching
  */
 
 class FolderManager {
   constructor() {
     this.folderCache = new Map();
+    this.treeCache = null;
+    this.treeCacheTimestamp = null;
+    this.TREE_CACHE_TTL = 30000; // 30 seconds
+    this.childrenCache = new Map();
+    this.CHILDREN_CACHE_TTL = 10000; // 10 seconds
+    this.preloadTimer = null;
+  }
+
+  /**
+   * Preload folder structure into cache
+   * @param {string} rootId - Root folder ID to preload
+   * @returns {Promise<void>}
+   */
+  async preloadFolderStructure(rootId = '1') {
+    try {
+      console.log('📦 Preloading folder structure...');
+      const startTime = Date.now();
+
+      const tree = await chrome.bookmarks.getSubTree(rootId);
+      this.treeCache = tree[0];
+      this.treeCacheTimestamp = Date.now();
+
+      await this._preloadChildrenRecursive(tree[0]);
+
+      console.log(`✅ Folder structure preloaded in ${Date.now() - startTime}ms`);
+    } catch (error) {
+      console.error('Error preloading folder structure:', error);
+    }
+  }
+
+  /**
+   * Recursively preload children into cache
+   * @private
+   */
+  async _preloadChildrenRecursive(node) {
+    if (!node || !node.id) return;
+
+    if (node.children) {
+      const folders = node.children.filter(child => !child.url);
+      const bookmarks = node.children.filter(child => child.url);
+
+      this.childrenCache.set(node.id, {
+        children: node.children,
+        folders,
+        bookmarks,
+        timestamp: Date.now()
+      });
+
+      for (const child of folders) {
+        await this._preloadChildrenRecursive(child);
+      }
+    }
+  }
+
+  /**
+   * Schedule automatic cache preloading
+   * @param {number} interval - Preload interval in milliseconds (default: 60s)
+   */
+  schedulePreloading(interval = 60000) {
+    if (this.preloadTimer) {
+      clearInterval(this.preloadTimer);
+    }
+
+    this.preloadTimer = setInterval(() => {
+      this.preloadFolderStructure();
+    }, interval);
+
+    this.preloadFolderStructure();
+  }
+
+  /**
+   * Stop automatic preloading
+   */
+  stopPreloading() {
+    if (this.preloadTimer) {
+      clearInterval(this.preloadTimer);
+      this.preloadTimer = null;
+    }
+  }
+
+  /**
+   * Get cached children or fetch from Chrome API
+   * @private
+   */
+  async _getCachedChildren(parentId) {
+    const cached = this.childrenCache.get(parentId);
+
+    if (cached && (Date.now() - cached.timestamp) < this.CHILDREN_CACHE_TTL) {
+      return cached.children;
+    }
+
+    const children = await chrome.bookmarks.getChildren(parentId);
+    this.childrenCache.set(parentId, {
+      children,
+      folders: children.filter(c => !c.url),
+      bookmarks: children.filter(c => c.url),
+      timestamp: Date.now()
+    });
+
+    return children;
+  }
+
+  /**
+   * Batch get multiple folder children with single cache lookup
+   * @param {Array<string>} parentIds - Array of parent IDs
+   * @returns {Promise<Map>} Map of parentId to children
+   */
+  async batchGetChildren(parentIds) {
+    const results = new Map();
+    const uncachedIds = [];
+
+    for (const parentId of parentIds) {
+      const cached = this.childrenCache.get(parentId);
+      if (cached && (Date.now() - cached.timestamp) < this.CHILDREN_CACHE_TTL) {
+        results.set(parentId, cached.children);
+      } else {
+        uncachedIds.push(parentId);
+      }
+    }
+
+    await Promise.all(uncachedIds.map(async (parentId) => {
+      try {
+        const children = await chrome.bookmarks.getChildren(parentId);
+        this.childrenCache.set(parentId, {
+          children,
+          folders: children.filter(c => !c.url),
+          bookmarks: children.filter(c => c.url),
+          timestamp: Date.now()
+        });
+        results.set(parentId, children);
+      } catch (error) {
+        console.error(`Error fetching children for ${parentId}:`, error);
+        results.set(parentId, []);
+      }
+    }));
+
+    return results;
   }
 
   /**
@@ -35,7 +172,6 @@ class FolderManager {
    * @returns {Promise<string>} Folder ID
    */
   async _createCategoryFolder(categoryPath, parentId = '1') {
-    // Check cache first
     const cacheKey = `${parentId}:${categoryPath}`;
     if (this.folderCache.has(cacheKey)) {
       return this.folderCache.get(cacheKey);
@@ -55,20 +191,19 @@ class FolderManager {
       }
     }
 
-    // Cache the result
     this.folderCache.set(cacheKey, currentParentId);
     return currentParentId;
   }
 
   /**
-   * Find folder by name in parent
+   * Find folder by name in parent (cache-optimized)
    * @param {string} name - Folder name
    * @param {string} parentId - Parent folder ID
    * @returns {Promise<Object|null>} Folder object or null
    */
   async _findFolderByName(name, parentId) {
     try {
-      const children = await chrome.bookmarks.getChildren(parentId);
+      const children = await this._getCachedChildren(parentId);
       return children.find(child => !child.url && child.title === name) || null;
     } catch (error) {
       console.error('Error finding folder:', error);
@@ -88,6 +223,9 @@ class FolderManager {
         parentId: parentId,
         title: title
       });
+
+      this.childrenCache.delete(parentId);
+
       console.log(`Created folder: ${title} in ${parentId}`);
       return folder;
     } catch (error) {
@@ -97,7 +235,7 @@ class FolderManager {
   }
 
   /**
-   * Move multiple bookmarks to folders efficiently
+   * Move multiple bookmarks to folders efficiently (batch optimized)
    * @param {Array} moves - Array of {bookmarkId, folderId} objects
    * @returns {Promise<Object>} Results summary
    */
@@ -108,41 +246,60 @@ class FolderManager {
       errorDetails: []
     };
 
-    for (const move of moves) {
-      try {
-        // Mark bookmark with AI metadata to prevent learning from AI moves
-        try {
-          const metadataKey = `ai_moved_${move.bookmarkId}`;
-          await chrome.storage.local.set({ [metadataKey]: Date.now() });
-        } catch (metadataError) {
-          console.warn('Failed to set AI metadata:', metadataError);
-        }
+    const BATCH_SIZE = 10;
+    const metadataEntries = {};
 
-        await chrome.bookmarks.move(move.bookmarkId, {
-          parentId: move.folderId
-        });
-        results.success++;
-      } catch (error) {
-        console.error(`Error moving bookmark ${move.bookmarkId}:`, error);
-        results.errors++;
-        results.errorDetails.push({
-          bookmarkId: move.bookmarkId,
-          error: error.message
-        });
+    for (let i = 0; i < moves.length; i += BATCH_SIZE) {
+      const batch = moves.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(batch.map(async (move) => {
+        try {
+          metadataEntries[`ai_moved_${move.bookmarkId}`] = Date.now();
+
+          await chrome.bookmarks.move(move.bookmarkId, {
+            parentId: move.folderId
+          });
+          results.success++;
+        } catch (error) {
+          console.error(`Error moving bookmark ${move.bookmarkId}:`, error);
+          results.errors++;
+          results.errorDetails.push({
+            bookmarkId: move.bookmarkId,
+            error: error.message
+          });
+        }
+      }));
+    }
+
+    try {
+      if (Object.keys(metadataEntries).length > 0) {
+        await chrome.storage.local.set(metadataEntries);
       }
+    } catch (metadataError) {
+      console.warn('Failed to set AI metadata in batch:', metadataError);
     }
 
     return results;
   }
 
   /**
-   * Get folder structure for display
+   * Get folder structure for display (cache-optimized)
    * @param {string} rootId - Root folder ID (default: bookmarks bar)
    * @returns {Promise<Object>} Folder tree structure
    */
   async getFolderStructure(rootId = '1') {
     try {
+      if (this.treeCache &&
+          this.treeCacheTimestamp &&
+          (Date.now() - this.treeCacheTimestamp) < this.TREE_CACHE_TTL &&
+          this.treeCache.id === rootId) {
+        return this._buildFolderTree(this.treeCache);
+      }
+
       const tree = await chrome.bookmarks.getSubTree(rootId);
+      this.treeCache = tree[0];
+      this.treeCacheTimestamp = Date.now();
+
       return this._buildFolderTree(tree[0]);
     } catch (error) {
       console.error('Error getting folder structure:', error);
@@ -166,10 +323,8 @@ class FolderManager {
     if (node.children) {
       for (const child of node.children) {
         if (child.url) {
-          // This is a bookmark
           tree.bookmarkCount++;
         } else {
-          // This is a folder
           const childTree = this._buildFolderTree(child);
           tree.children.push(childTree);
           tree.bookmarkCount += childTree.bookmarkCount;
@@ -191,6 +346,8 @@ class FolderManager {
     try {
       const tree = await this.getFolderStructure(rootId);
       removedCount = await this._removeEmptyFolders(tree);
+
+      this.invalidateCache();
     } catch (error) {
       console.error('Error cleaning up empty folders:', error);
     }
@@ -206,12 +363,10 @@ class FolderManager {
   async _removeEmptyFolders(folderTree) {
     let removedCount = 0;
 
-    // Process children first (bottom-up)
     for (const child of folderTree.children) {
       removedCount += await this._removeEmptyFolders(child);
     }
 
-    // Check if this folder is empty after processing children
     if (folderTree.children.length === 0 && folderTree.bookmarkCount === 0 && folderTree.id !== '1') {
       try {
         await chrome.bookmarks.remove(folderTree.id);
@@ -256,7 +411,6 @@ class FolderManager {
     const currentPath = path ? `${path}/${node.title}` : node.title;
 
     if (node.url) {
-      // This is a bookmark
       bookmarks.push({
         title: node.title,
         url: node.url,
@@ -275,19 +429,40 @@ class FolderManager {
   }
 
   /**
-   * Clear folder cache
+   * Invalidate all caches
+   */
+  invalidateCache() {
+    this.folderCache.clear();
+    this.treeCache = null;
+    this.treeCacheTimestamp = null;
+    this.childrenCache.clear();
+  }
+
+  /**
+   * Clear folder cache (legacy method, now calls invalidateCache)
    */
   clearCache() {
-    this.folderCache.clear();
+    this.invalidateCache();
+  }
+
+  /**
+   * Get cache statistics
+   * @returns {Object} Cache stats
+   */
+  getCacheStats() {
+    return {
+      folderCacheSize: this.folderCache.size,
+      childrenCacheSize: this.childrenCache.size,
+      treeCached: !!this.treeCache,
+      treeCacheAge: this.treeCacheTimestamp ? Date.now() - this.treeCacheTimestamp : null
+    };
   }
 }
 
-// Export for use in other modules
 if (typeof window !== 'undefined') {
   window.FolderManager = FolderManager;
 }
 
-// For service worker context (global scope)
 if (typeof self !== 'undefined' && typeof window === 'undefined') {
   self.FolderManager = FolderManager;
 }
