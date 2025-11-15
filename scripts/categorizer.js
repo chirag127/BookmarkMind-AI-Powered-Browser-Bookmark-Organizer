@@ -12,6 +12,7 @@ class Categorizer {
     this.learningService = typeof LearningService !== 'undefined' ? new LearningService() : null;
     this.snapshotManager = typeof SnapshotManager !== 'undefined' ? new SnapshotManager() : null;
     this.analyticsService = typeof AnalyticsService !== 'undefined' ? new AnalyticsService() : null;
+    this.errorAggregator = typeof ErrorAggregator !== 'undefined' ? new ErrorAggregator() : null;
     this.isProcessing = false;
     this.sessionStartTime = null;
   }
@@ -43,6 +44,11 @@ class Categorizer {
     try {
       if (categorizerLogger) categorizerLogger.info('Categorizer: Starting categorization...');
       progressCallback?.({ stage: 'starting', progress: 0 });
+
+      // Clear error aggregator at the start
+      if (this.errorAggregator) {
+        this.errorAggregator.clear();
+      }
 
       // Create snapshot before starting categorization
       if (this.snapshotManager) {
@@ -213,7 +219,36 @@ class Categorizer {
 
     } catch (error) {
       if (categorizerLogger) categorizerLogger.error('Categorization error:', error);
-      throw error;
+
+      // Wrap error with context if not already wrapped
+      if (error instanceof (typeof ContextError !== 'undefined' ? ContextError : Error)) {
+        throw error;
+      }
+
+      const contextError = new (typeof ContextError !== 'undefined' ? ContextError : Error)(
+        'Categorization failed',
+        {
+          operation: 'categorizing all bookmarks',
+          method: 'categorizeAllBookmarks',
+          forceReorganize,
+          timestamp: Date.now()
+        },
+        error
+      );
+
+      // Log user-friendly error
+      if (contextError.userMessage) {
+        console.error('User-friendly error:', contextError.userMessage);
+        console.error('Recovery steps:', contextError.recoverySteps);
+      }
+
+      // Show error summary if aggregator is available
+      if (this.errorAggregator && this.errorAggregator.getCount() > 0) {
+        const summary = this.errorAggregator.getSummary();
+        console.error(`Encountered ${summary.length} unique errors during categorization:`, summary);
+      }
+
+      throw contextError;
     } finally {
       this.isProcessing = false;
       this.sessionStartTime = null;
@@ -238,6 +273,11 @@ class Categorizer {
     try {
       if (categorizerLogger) categorizerLogger.info(`Categorizer: Starting bulk categorization of ${selectedBookmarks.length} bookmarks...`);
       progressCallback?.({ stage: 'starting', progress: 0 });
+
+      // Clear error aggregator at the start
+      if (this.errorAggregator) {
+        this.errorAggregator.clear();
+      }
 
       // Create snapshot before starting bulk categorization
       if (this.snapshotManager) {
@@ -377,7 +417,36 @@ class Categorizer {
 
     } catch (error) {
       if (categorizerLogger) categorizerLogger.error('Bulk categorization error:', error);
-      throw error;
+
+      // Wrap error with context if not already wrapped
+      if (error instanceof (typeof ContextError !== 'undefined' ? ContextError : Error)) {
+        throw error;
+      }
+
+      const contextError = new (typeof ContextError !== 'undefined' ? ContextError : Error)(
+        'Bulk categorization failed',
+        {
+          operation: 'bulk categorizing bookmarks',
+          method: 'categorizeBulkBookmarks',
+          bookmarkCount: selectedBookmarks.length,
+          timestamp: Date.now()
+        },
+        error
+      );
+
+      // Log user-friendly error
+      if (contextError.userMessage) {
+        console.error('User-friendly error:', contextError.userMessage);
+        console.error('Recovery steps:', contextError.recoverySteps);
+      }
+
+      // Show error summary if aggregator is available
+      if (this.errorAggregator && this.errorAggregator.getCount() > 0) {
+        const summary = this.errorAggregator.getSummary();
+        console.error(`Encountered ${summary.length} unique errors during bulk categorization:`, summary);
+      }
+
+      throw contextError;
     } finally {
       this.isProcessing = false;
       this.sessionStartTime = null;

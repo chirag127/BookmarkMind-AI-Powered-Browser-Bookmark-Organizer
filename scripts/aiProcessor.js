@@ -372,6 +372,11 @@ class AIProcessor {
               : null;
 
     this.requestQueue = new RequestQueue();
+    this.errorAggregator = new (typeof ErrorAggregator !== 'undefined' ? ErrorAggregator : class {
+      add() { return true; }
+      getSummary() { return []; }
+      clear() {}
+    })();
 
     // Gemini model fallback sequence - try models in order when one fails
     this.geminiModels = [
@@ -2351,24 +2356,38 @@ Return only the JSON array with properly formatted category names, no additional
                         response.status === 504; // Gateway timeout
 
           if (!isRetryableError) {
-            // Non-retryable errors - don't try other models
+            // Non-retryable errors - create context-aware error
+            const context = {
+              operation: 'generating categories with Gemini',
+              model: currentModel,
+              status: response.status,
+              attempt: attempt + 1
+            };
+
+            let errorMessage;
             if (response.status === 401) {
-              throw new Error(
-                'Invalid API key for category generation. Please check your Gemini API key.'
-              );
+              errorMessage = 'Invalid API key for category generation. Please check your Gemini API key.';
             } else if (response.status === 403) {
-              throw new Error(
-                'API access denied for category generation. Check your API key permissions.'
-              );
+              errorMessage = 'API access denied for category generation. Check your API key permissions.';
             } else if (response.status === 400) {
-              throw new Error(
-                'Bad request for category generation. Check your API key format.'
-              );
+              errorMessage = 'Bad request for category generation. Check your API key format.';
             } else {
-              throw new Error(
-                `Category generation failed: ${response.status} - ${errorText}`
-              );
+              errorMessage = `Category generation failed: ${response.status} - ${errorText}`;
             }
+
+            const contextError = new (typeof ContextError !== 'undefined' ? ContextError : Error)(
+              errorMessage,
+              context,
+              new Error(errorText)
+            );
+
+            // Log user-friendly error
+            if (contextError.userMessage) {
+              console.error('User-friendly error:', contextError.userMessage);
+              console.error('Recovery steps:', contextError.recoverySteps);
+            }
+
+            throw contextError;
           }
 
           lastError = new Error(

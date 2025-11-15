@@ -11,6 +11,7 @@ let memoryMonitor = null;
 if (!scriptsLoaded) {
   try {
     importScripts(
+      'errorHandler.js',
       'logger.js',
       'bookmarkService.js',
       'aiProcessor.js',
