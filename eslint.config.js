@@ -19,7 +19,12 @@ export default [
         Categorizer: 'readonly',
         FolderManager: 'readonly',
         LearningService: 'readonly',
-        SnapshotManager: 'readonly'
+        SnapshotManager: 'readonly',
+        Logger: 'readonly',
+        PerformanceMonitor: 'readonly',
+        ModelComparisonService: 'readonly',
+        FolderInsights: 'readonly',
+        BenchmarkService: 'readonly'
       }
     },
     rules: {
@@ -30,7 +35,7 @@ export default [
           varsIgnorePattern: '^_'
         }
       ],
-      'no-console': 'warn',
+      'no-console': ['warn', { allow: ['error', 'warn', 'log', 'group', 'groupEnd'] }],
       'semi': ['error', 'always'],
       'quotes': ['error', 'single', { avoidEscape: true }],
       'indent': ['error', 2],

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BookmarkMind - Background Script (Service Worker)
  * Handles extension lifecycle and background processing
  */
@@ -10,6 +10,7 @@ let scriptsLoaded = false;
 if (!scriptsLoaded) {
   try {
     importScripts(
+      'logger.js',
       'bookmarkService.js',
       'aiProcessor.js',
       'categorizer.js',
@@ -23,10 +24,11 @@ if (!scriptsLoaded) {
       'benchmarkService.js'
     );
     scriptsLoaded = true;
-    console.log('Background scripts loaded successfully');
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.info('Background scripts loaded successfully');
 
     // Verify classes are available
-    console.log('Available classes:', {
+    if (backgroundLogger) backgroundLogger.info('Available classes:', {
       BookmarkService: typeof BookmarkService !== 'undefined',
       AIProcessor: typeof AIProcessor !== 'undefined',
       Categorizer: typeof Categorizer !== 'undefined',
@@ -41,14 +43,18 @@ if (!scriptsLoaded) {
     });
 
   } catch (error) {
-    console.error('Failed to load background scripts:', error);
-    console.log('Will create instances dynamically if needed');
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Failed to load background scripts:', error);
+    if (backgroundLogger) backgroundLogger.info('Will create instances dynamically if needed');
   }
 }
 
+// Global backgroundLogger (available after script loading)
+const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+
 // Global flag to track AI categorization state
 let isAICategorizing = false;
-let aiCategorizedBookmarks = new Set(); // Track bookmarks moved by AI
+const aiCategorizedBookmarks = new Set(); // Track bookmarks moved by AI
 let aiCategorizationStartTime = null; // Track when AI categorization started
 
 // Global flag to track snapshot restoration state
@@ -56,7 +62,7 @@ let isRestoringSnapshot = false;
 
 // Debug function to log AI state
 function logAIState(context) {
-  console.log(`🤖 AI State [${context}]:`, {
+  if (backgroundLogger) backgroundLogger.info(`🤖 AI State [${context}]:`, {
     isAICategorizing,
     aiCategorizedBookmarksCount: aiCategorizedBookmarks.size,
     startTime: aiCategorizationStartTime,
@@ -66,19 +72,19 @@ function logAIState(context) {
 
 // Initialize extension on startup
 chrome.runtime.onStartup.addListener(() => {
-  console.log('BookmarkMind extension started');
+  if (backgroundLogger) backgroundLogger.info('BookmarkMind extension started');
 });
 
 // Handle extension installation
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('BookmarkMind extension installed/updated');
+  if (backgroundLogger) backgroundLogger.info('BookmarkMind extension installed/updated');
 
   if (details.reason === 'install') {
     // First time installation
     await initializeExtension();
   } else if (details.reason === 'update') {
     // Extension updated
-    console.log(`Updated from version ${details.previousVersion}`);
+    if (backgroundLogger) backgroundLogger.info(`Updated from version ${details.previousVersion}`);
   }
 });
 
@@ -117,7 +123,7 @@ async function initializeExtension() {
       await chrome.storage.sync.set({
         bookmarkMindSettings: defaultSettings
       });
-      console.log('Initialized default settings');
+      if (backgroundLogger) backgroundLogger.info('Initialized default settings');
     }
 
     // Migrate learning data from sync to local storage for backwards compatibility
@@ -129,240 +135,240 @@ async function initializeExtension() {
       await chrome.storage.local.set({
         bookmarkMindLearning: existingSyncLearning.bookmarkMindLearning
       });
-      console.log('Migrated learning data from sync to local storage');
+      if (backgroundLogger) backgroundLogger.info('Migrated learning data from sync to local storage');
     } else if (!existingLocalLearning.bookmarkMindLearning) {
       // Initialize learning data storage in local storage
       await chrome.storage.local.set({
         bookmarkMindLearning: {}
       });
-      console.log('Initialized learning data storage in local storage');
+      if (backgroundLogger) backgroundLogger.info('Initialized learning data storage in local storage');
     }
 
   } catch (error) {
-    console.error('Error initializing extension:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error initializing extension:', error);
   }
 }
 
 // Handle messages from popup and options pages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background received message:', message);
+  if (backgroundLogger) backgroundLogger.info('Background received message:', message)
 
   // Handle async operations properly
   (async () => {
-
     switch (message.action) {
-      case 'startCategorization':
-        await handleCategorization(message.data, sendResponse);
-        break;
+    case 'startCategorization':
+      await handleCategorization(message.data, sendResponse);
+      break;
 
-      case 'startBulkCategorization':
-        await handleBulkCategorization(message.data, sendResponse);
-        break;
+    case 'startBulkCategorization':
+      await handleBulkCategorization(message.data, sendResponse);
+      break;
 
-      case 'testApiKey':
-        await handleApiKeyTest(message.data, sendResponse);
-        break;
+    case 'testApiKey':
+      await handleApiKeyTest(message.data, sendResponse);
+      break;
 
-      case 'getStats':
-        await handleGetStats(sendResponse);
-        break;
+    case 'getStats':
+      await handleGetStats(sendResponse);
+      break;
 
-      case 'exportBookmarks':
-        await handleExportBookmarks(sendResponse);
-        break;
+    case 'exportBookmarks':
+      await handleExportBookmarks(sendResponse);
+      break;
 
-      case 'getAllBookmarks':
-        await handleGetAllBookmarks(sendResponse);
-        break;
+    case 'getAllBookmarks':
+      await handleGetAllBookmarks(sendResponse);
+      break;
 
-      case 'getAvailableCategories':
-        await handleGetAvailableCategories(sendResponse);
-        break;
+    case 'getAvailableCategories':
+      await handleGetAvailableCategories(sendResponse);
+      break;
 
-      case 'recategorizeBookmark':
-        await handleRecategorizeBookmark(message.data, sendResponse);
-        break;
+    case 'recategorizeBookmark':
+      await handleRecategorizeBookmark(message.data, sendResponse);
+      break;
 
-      case 'exportLearningData':
-        await handleExportLearningData(sendResponse);
-        break;
+    case 'exportLearningData':
+      await handleExportLearningData(sendResponse);
+      break;
 
-      case 'importLearningData':
-        await handleImportLearningData(message.data, sendResponse);
-        break;
+    case 'importLearningData':
+      await handleImportLearningData(message.data, sendResponse);
+      break;
 
-      case 'clearLearningData':
-        await handleClearLearningData(sendResponse);
-        break;
+    case 'clearLearningData':
+      await handleClearLearningData(sendResponse);
+      break;
 
-      case 'getLearningStatistics':
-        await handleGetLearningStatistics(sendResponse);
-        break;
+    case 'getLearningStatistics':
+      await handleGetLearningStatistics(sendResponse);
+      break;
 
-      case 'getSnapshots':
-        await handleGetSnapshots(sendResponse);
-        break;
+    case 'getSnapshots':
+      await handleGetSnapshots(sendResponse);
+      break;
 
-      case 'getPerformanceDashboard':
-        await handleGetPerformanceDashboard(sendResponse);
-        break;
+    case 'getPerformanceDashboard':
+      await handleGetPerformanceDashboard(sendResponse);
+      break;
 
-      case 'exportAnalyticsReport':
-        await handleExportAnalyticsReport(message.data, sendResponse);
-        break;
+    case 'exportAnalyticsReport':
+      await handleExportAnalyticsReport(message.data, sendResponse);
+      break;
 
-      case 'ping':
-        // Simple heartbeat check
-        sendResponse({ success: true, message: 'Background script is running' });
-        break;
+    case 'ping':
+      // Simple heartbeat check
+      sendResponse({ success: true, message: 'Background script is running' });
+      break;
 
-      case 'CATEGORIZATION_ERROR':
-        // Handle categorization errors from AI processor
-        await handleCategorizationError(message, sendResponse);
-        break;
+    case 'CATEGORIZATION_ERROR':
+      // Handle categorization errors from AI processor
+      await handleCategorizationError(message, sendResponse);
+      break;
 
-      case 'startAICategorization':
-        // Mark AI categorization as starting
-        isAICategorizing = true;
+    case 'startAICategorization':
+      // Mark AI categorization as starting
+      isAICategorizing = true;
+      aiCategorizedBookmarks.clear();
+      aiCategorizationStartTime = Date.now();
+
+      // AGGRESSIVE: Completely disable bookmark move listener during AI categorization
+      try {
+        chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
+        if (backgroundLogger) backgroundLogger.info('🤖 Bookmark move listener DISABLED during AI categorization');
+      } catch (error) {
+        const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+        if (backgroundLogger) backgroundLogger.warn('Failed to disable bookmark move listener:', error);
+      }
+
+      if (backgroundLogger) backgroundLogger.info('🤖 AI Categorization started - learning completely disabled');
+      logAIState('START');
+      sendResponse({ success: true });
+      break;
+
+    case 'endAICategorization':
+      // Mark AI categorization as ended
+      isAICategorizing = false;
+      if (backgroundLogger) backgroundLogger.info(`🤖 AI Categorization ended - learning re-enabled. ${aiCategorizedBookmarks.size} bookmarks were moved by AI`);
+      logAIState('END');
+
+      // AGGRESSIVE: Re-enable bookmark move listener after AI categorization with delay
+      setTimeout(() => {
+        try {
+          // Remove listener first (in case it's still there)
+          chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
+          // Add it back
+          chrome.bookmarks.onMoved.addListener(bookmarkMoveListener);
+          if (backgroundLogger) backgroundLogger.info('🤖 Bookmark move listener RE-ENABLED after AI categorization');
+        } catch (error) {
+          const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+          if (backgroundLogger) backgroundLogger.warn('Failed to re-enable bookmark move listener:', error);
+        }
+
+        if (backgroundLogger) backgroundLogger.info('🤖 Clearing AI-moved bookmarks set after delay');
         aiCategorizedBookmarks.clear();
-        aiCategorizationStartTime = Date.now();
+        aiCategorizationStartTime = null;
+        logAIState('CLEANUP');
+      }, 15000); // Increased delay to 15 seconds to ensure all AI moves are complete
 
-        // AGGRESSIVE: Completely disable bookmark move listener during AI categorization
+      sendResponse({ success: true });
+      break;
+
+    case 'markBookmarkAsAIMoved':
+      // Mark a specific bookmark as moved by AI
+      if (message.bookmarkId) {
+        aiCategorizedBookmarks.add(message.bookmarkId);
+        if (backgroundLogger) backgroundLogger.info(`🤖 Marked bookmark ${message.bookmarkId} as AI-moved (total: ${aiCategorizedBookmarks.size})`);
+        logAIState('MARK_BOOKMARK');
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'startSnapshotRestore':
+      // Disable bookmark move listener during restoration
+      isRestoringSnapshot = true;
+      try {
+        chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
+        if (backgroundLogger) backgroundLogger.info('🔄 Bookmark move listener DISABLED during snapshot restore');
+      } catch (error) {
+        const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+        if (backgroundLogger) backgroundLogger.warn('Failed to disable bookmark move listener:', error);
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'endSnapshotRestore':
+      // Re-enable bookmark move listener after restoration
+      isRestoringSnapshot = false;
+      setTimeout(() => {
         try {
           chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
-          console.log('🤖 Bookmark move listener DISABLED during AI categorization');
+          chrome.bookmarks.onMoved.addListener(bookmarkMoveListener);
+          if (backgroundLogger) backgroundLogger.info('🔄 Bookmark move listener RE-ENABLED after snapshot restore');
         } catch (error) {
-          console.warn('Failed to disable bookmark move listener:', error);
+          const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+          if (backgroundLogger) backgroundLogger.warn('Failed to re-enable bookmark move listener:', error);
         }
+      }, 5000);
+      sendResponse({ success: true });
+      break;
 
-        console.log('🤖 AI Categorization started - learning completely disabled');
-        logAIState('START');
-        sendResponse({ success: true });
-        break;
+    case 'restoreSnapshot':
+      await handleRestoreSnapshot(message.data, sendResponse);
+      break;
 
-      case 'endAICategorization':
-        // Mark AI categorization as ended
-        isAICategorizing = false;
-        console.log(`🤖 AI Categorization ended - learning re-enabled. ${aiCategorizedBookmarks.size} bookmarks were moved by AI`);
-        logAIState('END');
+    case 'deleteSnapshot':
+      await handleDeleteSnapshot(message.data, sendResponse);
+      break;
 
-        // AGGRESSIVE: Re-enable bookmark move listener after AI categorization with delay
-        setTimeout(() => {
-          try {
-            // Remove listener first (in case it's still there)
-            chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
-            // Add it back
-            chrome.bookmarks.onMoved.addListener(bookmarkMoveListener);
-            console.log('🤖 Bookmark move listener RE-ENABLED after AI categorization');
-          } catch (error) {
-            console.warn('Failed to re-enable bookmark move listener:', error);
-          }
+    case 'getAnalytics':
+      await handleGetAnalytics(sendResponse);
+      break;
 
-          console.log('🤖 Clearing AI-moved bookmarks set after delay');
-          aiCategorizedBookmarks.clear();
-          aiCategorizationStartTime = null;
-          logAIState('CLEANUP');
-        }, 15000); // Increased delay to 15 seconds to ensure all AI moves are complete
+    case 'clearAnalytics':
+      await handleClearAnalytics(sendResponse);
+      break;
 
-        sendResponse({ success: true });
-        break;
+    case 'runSnapshotDiagnostics':
+      await handleRunSnapshotDiagnostics(sendResponse);
+      break;
 
-      case 'markBookmarkAsAIMoved':
-        // Mark a specific bookmark as moved by AI
-        if (message.bookmarkId) {
-          aiCategorizedBookmarks.add(message.bookmarkId);
-          console.log(`🤖 Marked bookmark ${message.bookmarkId} as AI-moved (total: ${aiCategorizedBookmarks.size})`);
-          logAIState('MARK_BOOKMARK');
-        }
-        sendResponse({ success: true });
-        break;
+    case 'getModelComparison':
+      await handleGetModelComparison(sendResponse);
+      break;
 
-      case 'getSnapshots':
-        await handleGetSnapshots(sendResponse);
-        break;
+    case 'startABTest':
+      await handleStartABTest(message.data, sendResponse);
+      break;
 
-      case 'startSnapshotRestore':
-        // Disable bookmark move listener during restoration
-        isRestoringSnapshot = true;
-        try {
-          chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
-          console.log('🔄 Bookmark move listener DISABLED during snapshot restore');
-        } catch (error) {
-          console.warn('Failed to disable bookmark move listener:', error);
-        }
-        sendResponse({ success: true });
-        break;
+    case 'recordModelPerformance':
+      await handleRecordModelPerformance(message.data, sendResponse);
+      break;
 
-      case 'endSnapshotRestore':
-        // Re-enable bookmark move listener after restoration
-        isRestoringSnapshot = false;
-        setTimeout(() => {
-          try {
-            chrome.bookmarks.onMoved.removeListener(bookmarkMoveListener);
-            chrome.bookmarks.onMoved.addListener(bookmarkMoveListener);
-            console.log('🔄 Bookmark move listener RE-ENABLED after snapshot restore');
-          } catch (error) {
-            console.warn('Failed to re-enable bookmark move listener:', error);
-          }
-        }, 5000);
-        sendResponse({ success: true });
-        break;
+    case 'getCostReport':
+      await handleGetCostReport(message.data, sendResponse);
+      break;
 
-      case 'restoreSnapshot':
-        await handleRestoreSnapshot(message.data, sendResponse);
-        break;
+    case 'setBudgetAlert':
+      await handleSetBudgetAlert(message.data, sendResponse);
+      break;
 
-      case 'deleteSnapshot':
-        await handleDeleteSnapshot(message.data, sendResponse);
-        break;
+    case 'getModelRecommendation':
+      await handleGetModelRecommendation(message.data, sendResponse);
+      break;
 
-      case 'getAnalytics':
-        await handleGetAnalytics(sendResponse);
-        break;
+    case 'setCustomModelConfig':
+      await handleSetCustomModelConfig(message.data, sendResponse);
+      break;
 
-      case 'clearAnalytics':
-        await handleClearAnalytics(sendResponse);
-        break;
+    case 'getCustomModelConfig':
+      await handleGetCustomModelConfig(sendResponse);
+      break;
 
-      case 'runSnapshotDiagnostics':
-        await handleRunSnapshotDiagnostics(sendResponse);
-        break;
-
-      case 'getModelComparison':
-        await handleGetModelComparison(sendResponse);
-        break;
-
-      case 'startABTest':
-        await handleStartABTest(message.data, sendResponse);
-        break;
-
-      case 'recordModelPerformance':
-        await handleRecordModelPerformance(message.data, sendResponse);
-        break;
-
-      case 'getCostReport':
-        await handleGetCostReport(message.data, sendResponse);
-        break;
-
-      case 'setBudgetAlert':
-        await handleSetBudgetAlert(message.data, sendResponse);
-        break;
-
-      case 'getModelRecommendation':
-        await handleGetModelRecommendation(message.data, sendResponse);
-        break;
-
-      case 'setCustomModelConfig':
-        await handleSetCustomModelConfig(message.data, sendResponse);
-        break;
-
-      case 'getCustomModelConfig':
-        await handleGetCustomModelConfig(sendResponse);
-        break;
-
-      default:
-        console.warn('Unknown message action:', message.action);
-        sendResponse({ success: false, error: 'Unknown action' });
+    default:
+      if (backgroundLogger) backgroundLogger.warn('Unknown message action:', message.action);
+      sendResponse({ success: false, error: 'Unknown action' });
     }
   })();
 
@@ -374,13 +380,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  */
 async function handleCategorization(data, sendResponse) {
   try {
-    console.log('Starting categorization process...');
+    if (backgroundLogger) backgroundLogger.info('Starting categorization process...');
 
     // Check if Categorizer class is available
     if (typeof Categorizer === 'undefined') {
       throw new Error('Categorizer class not loaded. Please reload the extension.');
     }
-    console.log('✓ Categorizer class available');
+    if (backgroundLogger) backgroundLogger.info('✓ Categorizer class available');
 
     // Check if other required classes are available
     if (typeof BookmarkService === 'undefined') {
@@ -392,7 +398,7 @@ async function handleCategorization(data, sendResponse) {
     if (typeof FolderManager === 'undefined') {
       throw new Error('FolderManager class not loaded. Please reload the extension.');
     }
-    console.log('✓ All required classes available');
+    if (backgroundLogger) backgroundLogger.info('✓ All required classes available');
 
     // Test Chrome APIs
     if (!chrome.bookmarks) {
@@ -401,17 +407,17 @@ async function handleCategorization(data, sendResponse) {
     if (!chrome.storage) {
       throw new Error('Chrome storage API not available');
     }
-    console.log('✓ Chrome APIs available');
+    if (backgroundLogger) backgroundLogger.info('✓ Chrome APIs available');
 
     // Create categorizer instance
-    console.log('Creating categorizer instance...');
+    if (backgroundLogger) backgroundLogger.info('Creating categorizer instance...');
     const categorizer = new Categorizer();
-    console.log('✓ Categorizer instance created');
+    if (backgroundLogger) backgroundLogger.info('✓ Categorizer instance created');
 
     // Get and validate settings
-    console.log('Loading settings...');
+    if (backgroundLogger) backgroundLogger.info('Loading settings...');
     const settings = await chrome.storage.sync.get(['bookmarkMindSettings']);
-    console.log('Settings loaded:', settings);
+    if (backgroundLogger) backgroundLogger.info('Settings loaded:', settings);
 
     if (!settings.bookmarkMindSettings) {
       throw new Error('Extension settings not found. Please configure the extension first.');
@@ -420,31 +426,32 @@ async function handleCategorization(data, sendResponse) {
     if (!settings.bookmarkMindSettings.apiKey) {
       throw new Error('API key not configured. Please set up your Gemini API key in settings.');
     }
-    console.log('✓ Settings validated');
+    if (backgroundLogger) backgroundLogger.info('✓ Settings validated');
 
     // Initialize categorizer
-    console.log('Initializing categorizer...');
+    if (backgroundLogger) backgroundLogger.info('Initializing categorizer...');
     await categorizer.initialize(settings.bookmarkMindSettings);
-    console.log('✓ Categorizer initialized');
+    if (backgroundLogger) backgroundLogger.info('✓ Categorizer initialized');
 
     // Start categorization with progress updates
-    console.log('Starting categorization process...');
+    if (backgroundLogger) backgroundLogger.info('Starting categorization process...');
     const results = await categorizer.categorizeAllBookmarks((progress) => {
-      console.log('Progress update:', progress);
+      if (backgroundLogger) backgroundLogger.info('Progress update:', progress);
       // Send progress updates to popup (with better error handling)
       try {
         chrome.runtime.sendMessage({
           action: 'categorizationProgress',
           data: progress
         }).catch((error) => {
-          console.log('Progress message failed (popup likely closed):', error.message);
+          if (backgroundLogger) backgroundLogger.info('Progress message failed (popup likely closed):', error.message);
         });
       } catch (error) {
-        console.log('Progress callback error:', error.message);
+        const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+        if (backgroundLogger) backgroundLogger.info('Progress callback error:', error.message);
       }
     }, data.forceReorganize);
 
-    console.log('Categorization completed:', results);
+    if (backgroundLogger) backgroundLogger.info('Categorization completed:', results);
 
     // Update last sort time and save generated categories
     const updatedSettings = {
@@ -457,8 +464,9 @@ async function handleCategorization(data, sendResponse) {
     sendResponse({ success: true, data: results });
 
   } catch (error) {
-    console.error('Categorization error:', error);
-    console.error('Error stack:', error.stack);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Categorization error:', error);
+    if (backgroundLogger) backgroundLogger.error('Error stack:', error.stack);
     sendResponse({
       success: false,
       error: error.message || 'Categorization failed'
@@ -471,7 +479,7 @@ async function handleCategorization(data, sendResponse) {
  */
 async function handleBulkCategorization(data, sendResponse) {
   try {
-    console.log('Starting bulk categorization process...', data);
+    if (backgroundLogger) backgroundLogger.info('Starting bulk categorization process...', data);
 
     // Validate input data
     if (!data.bookmarks || !Array.isArray(data.bookmarks) || data.bookmarks.length === 0) {
@@ -482,7 +490,7 @@ async function handleBulkCategorization(data, sendResponse) {
       throw new Error('No bookmark IDs provided for bulk categorization');
     }
 
-    console.log(`Processing ${data.bookmarks.length} selected bookmarks...`);
+    if (backgroundLogger) backgroundLogger.info(`Processing ${data.bookmarks.length} selected bookmarks...`);
 
     // Check if required classes are available
     if (typeof Categorizer === 'undefined') {
@@ -497,7 +505,7 @@ async function handleBulkCategorization(data, sendResponse) {
     if (typeof FolderManager === 'undefined') {
       throw new Error('FolderManager class not loaded. Please reload the extension.');
     }
-    console.log('✓ All required classes available');
+    if (backgroundLogger) backgroundLogger.info('✓ All required classes available');
 
     // Test Chrome APIs
     if (!chrome.bookmarks) {
@@ -506,12 +514,12 @@ async function handleBulkCategorization(data, sendResponse) {
     if (!chrome.storage) {
       throw new Error('Chrome storage API not available');
     }
-    console.log('✓ Chrome APIs available');
+    if (backgroundLogger) backgroundLogger.info('✓ Chrome APIs available');
 
     // Get and validate settings
-    console.log('Loading settings...');
+    if (backgroundLogger) backgroundLogger.info('Loading settings...');
     const settings = await chrome.storage.sync.get(['bookmarkMindSettings']);
-    console.log('Settings loaded:', settings);
+    if (backgroundLogger) backgroundLogger.info('Settings loaded:', settings);
 
     if (!settings.bookmarkMindSettings) {
       throw new Error('Extension settings not found. Please configure the extension first.');
@@ -520,40 +528,41 @@ async function handleBulkCategorization(data, sendResponse) {
     if (!settings.bookmarkMindSettings.apiKey) {
       throw new Error('API key not configured. Please set up your Gemini API key in settings.');
     }
-    console.log('✓ Settings validated');
+    if (backgroundLogger) backgroundLogger.info('✓ Settings validated');
 
     // Create categorizer instance
-    console.log('Creating categorizer instance...');
+    if (backgroundLogger) backgroundLogger.info('Creating categorizer instance...');
     const categorizer = new Categorizer();
-    console.log('✓ Categorizer instance created');
+    if (backgroundLogger) backgroundLogger.info('✓ Categorizer instance created');
 
     // Initialize categorizer
-    console.log('Initializing categorizer...');
+    if (backgroundLogger) backgroundLogger.info('Initializing categorizer...');
     await categorizer.initialize(settings.bookmarkMindSettings);
-    console.log('✓ Categorizer initialized');
+    if (backgroundLogger) backgroundLogger.info('✓ Categorizer initialized');
 
     // Process selected bookmarks with progress updates
-    console.log('Starting bulk categorization process...');
+    if (backgroundLogger) backgroundLogger.info('Starting bulk categorization process...');
     const results = await categorizer.categorizeBulkBookmarks(
       data.bookmarks,
       data.selectedIds,
       (progress) => {
-        console.log('Bulk progress update:', progress);
+        if (backgroundLogger) backgroundLogger.info('Bulk progress update:', progress);
         // Send progress updates to popup
         try {
           chrome.runtime.sendMessage({
             action: 'categorizationProgress',
             data: progress
           }).catch((error) => {
-            console.log('Progress message failed (popup likely closed):', error.message);
+            if (backgroundLogger) backgroundLogger.info('Progress message failed (popup likely closed):', error.message);
           });
         } catch (error) {
-          console.log('Progress callback error:', error.message);
+          const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+          if (backgroundLogger) backgroundLogger.info('Progress callback error:', error.message);
         }
       }
     );
 
-    console.log('Bulk categorization completed:', results);
+    if (backgroundLogger) backgroundLogger.info('Bulk categorization completed:', results);
 
     // Update last sort time
     const updatedSettings = {
@@ -565,8 +574,9 @@ async function handleBulkCategorization(data, sendResponse) {
     sendResponse({ success: true, data: results });
 
   } catch (error) {
-    console.error('Bulk categorization error:', error);
-    console.error('Error stack:', error.stack);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Bulk categorization error:', error);
+    if (backgroundLogger) backgroundLogger.error('Error stack:', error.stack);
     sendResponse({
       success: false,
       error: error.message || 'Bulk categorization failed'
@@ -591,7 +601,8 @@ async function handleApiKeyTest(data, sendResponse) {
     sendResponse({ success: true, valid: isValid });
 
   } catch (error) {
-    console.error('API key test error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('API key test error:', error);
     sendResponse({
       success: false,
       error: error.message || 'API key test failed'
@@ -604,14 +615,14 @@ async function handleApiKeyTest(data, sendResponse) {
  */
 async function handleGetStats(sendResponse) {
   try {
-    console.log('Background: Getting stats...');
+    if (backgroundLogger) backgroundLogger.info('Background: Getting stats...');
 
     // Test direct bookmark access first
     try {
       const tree = await chrome.bookmarks.getTree();
-      console.log('Background: Direct bookmark access successful, tree length:', tree.length);
+      if (backgroundLogger) backgroundLogger.info('Background: Direct bookmark access successful, tree length:', tree.length);
     } catch (directError) {
-      console.error('Background: Direct bookmark access failed:', directError);
+      if (backgroundLogger) backgroundLogger.error('Background: Direct bookmark access failed:', directError);
       sendResponse({
         success: false,
         error: 'Cannot access bookmarks: ' + directError.message
@@ -627,11 +638,12 @@ async function handleGetStats(sendResponse) {
     const categorizer = new Categorizer();
     const stats = await categorizer.getStats();
 
-    console.log('Background stats calculated:', stats);
+    if (backgroundLogger) backgroundLogger.info('Background stats calculated:', stats);
     sendResponse({ success: true, data: stats });
 
   } catch (error) {
-    console.error('Background stats error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Background stats error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to get stats'
@@ -655,7 +667,8 @@ async function handleExportBookmarks(sendResponse) {
     sendResponse({ success: true, data: exportData });
 
   } catch (error) {
-    console.error('Export error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Export error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Export failed'
@@ -668,20 +681,21 @@ async function handleExportBookmarks(sendResponse) {
  */
 async function handleGetSnapshots(sendResponse) {
   try {
-    console.log('Retrieving snapshots from storage...');
-    
+    if (backgroundLogger) backgroundLogger.info('Retrieving snapshots from storage...');
+
     const result = await chrome.storage.local.get(['bookmarkSnapshots']);
     const snapshots = result.bookmarkSnapshots || [];
-    
-    console.log(`Retrieved ${snapshots.length} snapshots from storage`);
-    
-    sendResponse({ 
-      success: true, 
+
+    if (backgroundLogger) backgroundLogger.info(`Retrieved ${snapshots.length} snapshots from storage`);
+
+    sendResponse({
+      success: true,
       data: snapshots
     });
 
   } catch (error) {
-    console.error('Get snapshots error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Get snapshots error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to retrieve snapshots from storage'
@@ -700,16 +714,17 @@ async function handleGetPerformanceDashboard(sendResponse) {
 
     const perfMonitor = new PerformanceMonitor();
     await perfMonitor.initialize();
-    
+
     const dashboard = await perfMonitor.getPerformanceDashboard();
-    
+
     sendResponse({
       success: true,
       data: dashboard
     });
 
   } catch (error) {
-    console.error('Get performance dashboard error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Get performance dashboard error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to get performance dashboard'
@@ -732,14 +747,15 @@ async function handleExportAnalyticsReport(data, sendResponse) {
       data.startDate || null,
       data.endDate || null
     );
-    
+
     sendResponse({
       success: true,
       data: report
     });
 
   } catch (error) {
-    console.error('Export analytics report error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Export analytics report error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to export analytics report'
@@ -769,14 +785,16 @@ async function handleRestoreSnapshot(data, sendResponse) {
           data: progress
         }).catch(() => {});
       } catch (error) {
-        console.log('Progress callback error:', error.message);
+        const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+        if (backgroundLogger) backgroundLogger.info('Progress callback error:', error.message);
       }
     });
 
     sendResponse({ success: true, data: results });
 
   } catch (error) {
-    console.error('Restore snapshot error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Restore snapshot error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to restore snapshot'
@@ -803,7 +821,8 @@ async function handleDeleteSnapshot(data, sendResponse) {
     sendResponse({ success: success, message: 'Snapshot deleted successfully' });
 
   } catch (error) {
-    console.error('Delete snapshot error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Delete snapshot error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to delete snapshot'
@@ -826,7 +845,8 @@ async function handleGetAnalytics(sendResponse) {
     sendResponse({ success: true, data: report });
 
   } catch (error) {
-    console.error('Analytics error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Analytics error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to get analytics'
@@ -849,7 +869,8 @@ async function handleClearAnalytics(sendResponse) {
     sendResponse({ success: true });
 
   } catch (error) {
-    console.error('Clear analytics error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Clear analytics error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to clear analytics'
@@ -872,7 +893,8 @@ async function handleRunSnapshotDiagnostics(sendResponse) {
     sendResponse({ success: true, data: diagnostics });
 
   } catch (error) {
-    console.error('Snapshot diagnostics error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Snapshot diagnostics error:', error);
     sendResponse({
       success: false,
       error: error.message || 'Failed to run snapshot diagnostics'
@@ -889,7 +911,8 @@ async function handleGetAllBookmarks(sendResponse) {
     const bookmarks = await bookmarkService.getAllBookmarks();
     sendResponse({ success: true, data: bookmarks });
   } catch (error) {
-    console.error('Error getting all bookmarks:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting all bookmarks:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -925,7 +948,8 @@ async function handleGetAvailableCategories(sendResponse) {
     const categoryList = Array.from(categories).sort();
     sendResponse({ success: true, data: categoryList });
   } catch (error) {
-    console.error('Error getting categories:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting categories:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -950,11 +974,12 @@ async function handleRecategorizeBookmark(data, sendResponse) {
     const learningService = new LearningService();
     await learningService.recordCorrection(bookmark, oldCategory, newCategory, true);
 
-    console.log(`✅ Manual recategorization: "${bookmark.title}" from "${oldCategory}" to "${newCategory}"`);
+    if (backgroundLogger) backgroundLogger.info(`✅ Manual recategorization: "${bookmark.title}" from "${oldCategory}" to "${newCategory}"`);
 
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error recategorizing bookmark:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error recategorizing bookmark:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -968,7 +993,8 @@ async function handleExportLearningData(sendResponse) {
     const exportData = await learningService.exportLearningData();
     sendResponse({ success: true, data: exportData });
   } catch (error) {
-    console.error('Error exporting learning data:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error exporting learning data:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -983,7 +1009,8 @@ async function handleImportLearningData(data, sendResponse) {
     const result = await learningService.importLearningData(learningData, merge);
     sendResponse({ success: true, data: result });
   } catch (error) {
-    console.error('Error importing learning data:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error importing learning data:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -997,7 +1024,8 @@ async function handleClearLearningData(sendResponse) {
     await learningService.clearLearningData();
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error clearing learning data:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error clearing learning data:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1011,7 +1039,8 @@ async function handleGetLearningStatistics(sendResponse) {
     const statistics = await learningService.getStatistics();
     sendResponse({ success: true, data: statistics });
   } catch (error) {
-    console.error('Error getting learning statistics:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting learning statistics:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1021,7 +1050,7 @@ async function handleGetLearningStatistics(sendResponse) {
  */
 async function handleCategorizationError(message, sendResponse) {
   try {
-    console.error('🚨 CATEGORIZATION ERROR RECEIVED:', message);
+    if (backgroundLogger) backgroundLogger.error('🚨 CATEGORIZATION ERROR RECEIVED:', message);
 
     // Log the error details
     const errorDetails = {
@@ -1031,7 +1060,7 @@ async function handleCategorizationError(message, sendResponse) {
       timestamp: new Date().toISOString()
     };
 
-    console.error('Error details:', errorDetails);
+    if (backgroundLogger) backgroundLogger.error('Error details:', errorDetails);
 
     // Forward error to popup/options page if they're listening
     try {
@@ -1040,7 +1069,7 @@ async function handleCategorizationError(message, sendResponse) {
         error: errorDetails
       });
     } catch (forwardError) {
-      console.log('Could not forward error to popup (likely closed):', forwardError.message);
+      if (backgroundLogger) backgroundLogger.info('Could not forward error to popup (likely closed):', forwardError.message);
     }
 
     // Store error in storage for later retrieval
@@ -1056,23 +1085,25 @@ async function handleCategorizationError(message, sendResponse) {
 
       await chrome.storage.local.set({ categorizationErrors: errorLog.categorizationErrors });
     } catch (storageError) {
-      console.error('Failed to store error log:', storageError);
+      if (backgroundLogger) backgroundLogger.error('Failed to store error log:', storageError);
     }
 
     sendResponse({ success: true, message: 'Error logged' });
 
   } catch (error) {
-    console.error('Error handling categorization error:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error handling categorization error:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
 
 // Handle bookmark changes for learning
-let bookmarkMoveListener = async (id, moveInfo) => {
+const bookmarkMoveListener = async (id, moveInfo) => {
   try {
     await handleBookmarkMove(id, moveInfo);
   } catch (error) {
-    console.error('Error handling bookmark move:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error handling bookmark move:', error);
   }
 };
 
@@ -1083,7 +1114,7 @@ chrome.bookmarks.onMoved.addListener(bookmarkMoveListener);
  */
 async function handleBookmarkMove(bookmarkId, moveInfo) {
   try {
-    console.log(`📚 Learning: Bookmark ${bookmarkId} moved from ${moveInfo.oldParentId} to ${moveInfo.parentId}`);
+    if (backgroundLogger) backgroundLogger.info(`📚 Learning: Bookmark ${bookmarkId} moved from ${moveInfo.oldParentId} to ${moveInfo.parentId}`);
     logAIState('BOOKMARK_MOVE');
 
     // CRITICAL: Only learn from MANUAL user moves, never from AI categorization
@@ -1093,31 +1124,31 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
 
     // Layer 0: Skip learning if snapshot restoration is in progress
     if (isRestoringSnapshot) {
-      console.log('📚 ❌ BLOCKED (Layer 0): Snapshot restoration in progress - preventing learning');
+      if (backgroundLogger) backgroundLogger.info('📚 ❌ BLOCKED (Layer 0): Snapshot restoration in progress - preventing learning');
       return;
     }
 
     // Layer 1: Skip learning if AI categorization is in progress (global flag)
     if (isAICategorizing) {
-      console.log('📚 ❌ BLOCKED (Layer 1): AI categorization in progress - only learning from manual user moves');
+      if (backgroundLogger) backgroundLogger.info('📚 ❌ BLOCKED (Layer 1): AI categorization in progress - only learning from manual user moves');
       return;
     }
 
     // Layer 2: Skip learning if this specific bookmark was moved by AI (bookmark-level tracking)
     if (aiCategorizedBookmarks.has(bookmarkId)) {
-      console.log(`📚 ❌ BLOCKED (Layer 2): Bookmark ${bookmarkId} was moved by AI - only learning from manual user moves`);
+      if (backgroundLogger) backgroundLogger.info(`📚 ❌ BLOCKED (Layer 2): Bookmark ${bookmarkId} was moved by AI - only learning from manual user moves`);
       return;
     }
 
     // Layer 3: Skip learning if AI categorization happened recently (time-based protection)
     if (aiCategorizationStartTime && (Date.now() - aiCategorizationStartTime) < 30000) {
-      console.log(`📚 ❌ BLOCKED (Layer 3): AI categorization happened recently (${Date.now() - aiCategorizationStartTime}ms ago) - preventing learning`);
+      if (backgroundLogger) backgroundLogger.info(`📚 ❌ BLOCKED (Layer 3): AI categorization happened recently (${Date.now() - aiCategorizationStartTime}ms ago) - preventing learning`);
       return;
     }
 
     // Layer 4: Skip learning if there are any AI-moved bookmarks still tracked (batch protection)
     if (aiCategorizedBookmarks.size > 0) {
-      console.log(`📚 ❌ BLOCKED (Layer 4): ${aiCategorizedBookmarks.size} AI-moved bookmarks still tracked - preventing learning`);
+      if (backgroundLogger) backgroundLogger.info(`📚 ❌ BLOCKED (Layer 4): ${aiCategorizedBookmarks.size} AI-moved bookmarks still tracked - preventing learning`);
       return;
     }
 
@@ -1127,7 +1158,7 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
       if (metadata[`ai_moved_${bookmarkId}`]) {
         const moveAge = Date.now() - metadata[`ai_moved_${bookmarkId}`];
         if (moveAge < 60000) { // Within last minute
-          console.log(`📚 ❌ BLOCKED (Layer 5): Bookmark ${bookmarkId} has AI metadata marker (${moveAge}ms old) - preventing learning`);
+          if (backgroundLogger) backgroundLogger.info(`📚 ❌ BLOCKED (Layer 5): Bookmark ${bookmarkId} has AI metadata marker (${moveAge}ms old) - preventing learning`);
           // Clean up old metadata
           await chrome.storage.local.remove([`ai_moved_${bookmarkId}`]);
           return;
@@ -1136,13 +1167,13 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
         await chrome.storage.local.remove([`ai_moved_${bookmarkId}`]);
       }
     } catch (metadataError) {
-      console.warn('Error checking AI metadata:', metadataError);
+      if (backgroundLogger) backgroundLogger.warn('Error checking AI metadata:', metadataError);
     }
 
     // Get bookmark details
     const bookmark = await chrome.bookmarks.get(bookmarkId);
     if (!bookmark || !bookmark[0] || !bookmark[0].url) {
-      console.log('📚 Skipping: Not a bookmark (folder or invalid)');
+      if (backgroundLogger) backgroundLogger.info('📚 Skipping: Not a bookmark (folder or invalid)');
       return;
     }
 
@@ -1152,35 +1183,35 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
     const oldFolder = await getFolderPath(moveInfo.oldParentId);
     const newFolder = await getFolderPath(moveInfo.parentId);
 
-    console.log(`📚 Move details: "${bookmarkData.title}" from "${oldFolder}" to "${newFolder}"`);
+    if (backgroundLogger) backgroundLogger.info(`📚 Move details: "${bookmarkData.title}" from "${oldFolder}" to "${newFolder}"`);
 
     // Layer 6: Final safety check - if we got here during AI categorization, something is wrong
     if (isAICategorizing) {
-      console.error('📚 🚨 CRITICAL ERROR (Layer 6): Learning function called during AI categorization despite safeguards!');
+      if (backgroundLogger) backgroundLogger.error('📚 🚨 CRITICAL ERROR (Layer 6): Learning function called during AI categorization despite safeguards!');
       return;
     }
 
     // Skip learning if moved to Bookmark Bar (user preparing for AI reorganization)
     if (moveInfo.parentId === '1') {
-      console.log('📚 Skipping: Moved to Bookmark Bar (likely for AI reorganization)');
+      if (backgroundLogger) backgroundLogger.info('📚 Skipping: Moved to Bookmark Bar (likely for AI reorganization)');
       return;
     }
 
     // Skip learning if moved from Bookmark Bar (AI categorization result)
     if (moveInfo.oldParentId === '1') {
-      console.log('📚 Skipping: Moved from Bookmark Bar (likely AI categorization result)');
+      if (backgroundLogger) backgroundLogger.info('📚 Skipping: Moved from Bookmark Bar (likely AI categorization result)');
       return;
     }
 
     // Skip if both folders are root folders (not meaningful categorization)
     if (['1', '2', '3'].includes(moveInfo.oldParentId) && ['1', '2', '3'].includes(moveInfo.parentId)) {
-      console.log('📚 Skipping: Move between root folders');
+      if (backgroundLogger) backgroundLogger.info('📚 Skipping: Move between root folders');
       return;
     }
 
     // Skip if new folder is a root folder (except Bookmark Bar which we already handled)
     if (['2', '3'].includes(moveInfo.parentId)) {
-      console.log('📚 Skipping: Moved to root folder (Other Bookmarks/Mobile)');
+      if (backgroundLogger) backgroundLogger.info('📚 Skipping: Moved to root folder (Other Bookmarks/Mobile)');
       return;
     }
 
@@ -1193,7 +1224,7 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
       true // isManual = true for user-initiated moves
     );
 
-    console.log(`📚 ✅ MANUAL LEARNING SUCCESS: Learned from USER move: "${bookmarkData.title}" from "${oldFolder}" to "${newFolder}"`);
+    if (backgroundLogger) backgroundLogger.info(`📚 ✅ MANUAL LEARNING SUCCESS: Learned from USER move: "${bookmarkData.title}" from "${oldFolder}" to "${newFolder}"`);
 
     // Send notification to options page about learning
     try {
@@ -1204,11 +1235,13 @@ async function handleBookmarkMove(bookmarkId, moveInfo) {
         source: 'MANUAL_USER_MOVE'
       });
     } catch (error) {
-      console.warn('Failed to notify about learning update:', error);
+      const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+      if (backgroundLogger) backgroundLogger.warn('Failed to notify about learning update:', error);
     }
 
   } catch (error) {
-    console.error('Error in handleBookmarkMove:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error in handleBookmarkMove:', error);
   }
 }
 
@@ -1243,7 +1276,8 @@ async function getFolderPath(folderId) {
 
     return pathParts.join(' > ');
   } catch (error) {
-    console.error('Error getting folder path:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting folder path:', error);
     return 'Unknown';
   }
 }
@@ -1257,7 +1291,8 @@ async function handleGetModelComparison(sendResponse) {
     const dashboard = await modelComparisonService.getComparisonDashboard();
     sendResponse({ success: true, data: dashboard });
   } catch (error) {
-    console.error('Error getting model comparison:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting model comparison:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1268,7 +1303,7 @@ async function handleGetModelComparison(sendResponse) {
 async function handleStartABTest(data, sendResponse) {
   try {
     const { modelA, modelB, bookmarks } = data;
-    
+
     if (!bookmarks || bookmarks.length === 0) {
       throw new Error('No bookmarks provided for A/B testing');
     }
@@ -1289,27 +1324,27 @@ async function handleStartABTest(data, sendResponse) {
     const startTimeA = Date.now();
     const resultsA = await processWithSpecificModel(modelA, bookmarks, aiProcessor, settings);
     resultsA.time = Date.now() - startTimeA;
-    
+
     const startTimeB = Date.now();
     const resultsB = await processWithSpecificModel(modelB, bookmarks, aiProcessor, settings);
     resultsB.time = Date.now() - startTimeB;
 
     // Record comparison with full metrics
     const modelComparisonService = new ModelComparisonService();
-    
+
     // Calculate costs
     const costA = modelComparisonService._calculateCost({
       model: modelA,
       inputTokens: resultsA.metrics?.inputTokens || 0,
       outputTokens: resultsA.metrics?.outputTokens || 0
     });
-    
+
     const costB = modelComparisonService._calculateCost({
       model: modelB,
       inputTokens: resultsB.metrics?.inputTokens || 0,
       outputTokens: resultsB.metrics?.outputTokens || 0
     });
-    
+
     await modelComparisonService.recordABTest({
       modelA,
       modelB,
@@ -1323,14 +1358,14 @@ async function handleStartABTest(data, sendResponse) {
       costA,
       costB
     });
-    
+
     // Record performance metrics for both models
     if (resultsA.metrics) {
       resultsA.metrics.responseTime = resultsA.time;
       await modelComparisonService.recordModelPerformance(resultsA.metrics);
       await modelComparisonService.trackCost(resultsA.metrics);
     }
-    
+
     if (resultsB.metrics) {
       resultsB.metrics.responseTime = resultsB.time;
       await modelComparisonService.recordModelPerformance(resultsB.metrics);
@@ -1347,7 +1382,8 @@ async function handleStartABTest(data, sendResponse) {
       }
     });
   } catch (error) {
-    console.error('Error in A/B test:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error in A/B test:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1374,11 +1410,11 @@ async function processWithSpecificModel(modelName, bookmarks, aiProcessor, setti
 
     // Build the prompt for categorization
     const prompt = await aiProcessor._buildPrompt(bookmarks, [], {});
-    
+
     let result;
     let inputTokens = 0;
     let outputTokens = 0;
-    
+
     if (provider === 'gemini') {
       result = await aiProcessor._processWithGemini(bookmarks, [], {}, modelName);
     } else if (provider === 'cerebras') {
@@ -1389,7 +1425,7 @@ async function processWithSpecificModel(modelName, bookmarks, aiProcessor, setti
 
     // Extract categories from results
     const categories = [...new Set(result.map(r => r.category).filter(Boolean))];
-    
+
     // Estimate token counts (rough approximation)
     const promptText = JSON.stringify(bookmarks);
     inputTokens = Math.ceil(promptText.length / 4);
@@ -1411,7 +1447,8 @@ async function processWithSpecificModel(modelName, bookmarks, aiProcessor, setti
       }
     };
   } catch (error) {
-    console.error(`Error processing with ${modelName}:`, error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error(`Error processing with ${modelName}:`, error);
     return {
       categories: [],
       results: [],
@@ -1441,7 +1478,8 @@ async function handleRecordModelPerformance(data, sendResponse) {
     await modelComparisonService.trackCost(data.metrics);
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error recording model performance:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error recording model performance:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1455,7 +1493,8 @@ async function handleGetCostReport(data, sendResponse) {
     const report = await modelComparisonService.getCostReport(data.period || 'all');
     sendResponse({ success: true, data: report });
   } catch (error) {
-    console.error('Error getting cost report:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting cost report:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1469,7 +1508,8 @@ async function handleSetBudgetAlert(data, sendResponse) {
     await modelComparisonService.setBudgetAlert(data.budget);
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error setting budget alert:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error setting budget alert:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1486,7 +1526,8 @@ async function handleGetModelRecommendation(data, sendResponse) {
     );
     sendResponse({ success: true, data: recommendation });
   } catch (error) {
-    console.error('Error getting model recommendation:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting model recommendation:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1499,7 +1540,8 @@ async function handleSetCustomModelConfig(data, sendResponse) {
     await chrome.storage.sync.set({ customModelConfig: data.config });
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error setting custom model config:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error setting custom model config:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -1512,14 +1554,15 @@ async function handleGetCustomModelConfig(sendResponse) {
     const result = await chrome.storage.sync.get(['customModelConfig']);
     sendResponse({ success: true, data: result.customModelConfig || null });
   } catch (error) {
-    console.error('Error getting custom model config:', error);
+    const backgroundLogger = typeof Logger !== 'undefined' ? Logger.create('Background') : null;
+    if (backgroundLogger) backgroundLogger.error('Error getting custom model config:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
 
 // Cleanup on extension shutdown
 chrome.runtime.onSuspend.addListener(() => {
-  console.log('BookmarkMind extension suspending');
+  if (backgroundLogger) backgroundLogger.info('BookmarkMind extension suspending');
 });
 
-console.log('BookmarkMind background script loaded');
+if (backgroundLogger) backgroundLogger.info('BookmarkMind background script loaded');
